@@ -1,0 +1,60 @@
+{
+  "name": "homebridge-aeg-robot-matter",
+  "displayName": "AEG Robot Matter",
+  "version": "0.1.0",
+  "description": "Homebridge plugin for AEG RX9 / Electrolux Pure i9 robot vacuums with HomeKit switch and Matter RVC support.",
+  "license": "MIT",
+  "author": {
+    "name": "Niklas31",
+    "url": "https://github.com/Niklas31"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Niklas31/homebridge-aeg-robot-matter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Niklas31/homebridge-aeg-robot-matter/issues"
+  },
+  "homepage": "https://github.com/Niklas31/homebridge-aeg-robot-matter#readme",
+  "keywords": [
+    "homebridge-plugin",
+    "homebridge",
+    "matter",
+    "aeg",
+    "electrolux",
+    "rx9",
+    "pure-i9",
+    "robot",
+    "vacuum"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": "^24.11.1 || ^22.21.1 || ^20.19.5",
+    "homebridge": "^2.0.0 || ^1.8.0"
+  },
+  "dependencies": {
+    "node-persist": "^4.0.4",
+    "semver": "^7.7.3",
+    "ts-interface-checker": "^1.0.2",
+    "undici": "^7.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.25",
+    "@types/node-persist": "^3.1.8",
+    "@types/semver": "^7.7.1",
+    "homebridge": "^2.0.0",
+    "rimraf": "^6.1.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "prepare": "npm run build",
+    "prepack": "npm run build"
+  },
+  "homebridge": {
+    "pluginAlias": "AEGRobotMatter",
+    "pluginType": "platform"
+  }
+}

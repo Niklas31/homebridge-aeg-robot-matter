@@ -1,0 +1,472 @@
+// Matterbridge plugin for AEG RX9 / Electrolux Pure i9 robot vacuum
+// Copyright © 2025 Alexander Thoukydides
+
+import { AnsiLogger } from './logger.js';
+import { AEGApplianceRX9Log } from './aeg-appliance-log-rx9.js';
+import { Config } from './config-types.js';
+import { formatList, MS } from './utils.js';
+import {
+    RX9ApplianceInfo,
+    RX9ApplianceState,
+    RX9BatteryStatus,
+    RX9Capabilities,
+    RX9Dustbin,
+    RX9Message,
+    RX92PowerMode,
+    RX9RobotStatus,
+    RX9InteractiveMaps,
+    RX9CustomPlayMapZones,
+    RX9CleaningSessionZoneStatus,
+    RX9MapData,
+    RX9CleaningComplete
+} from './aegapi-rx9-types.js';
+import { AEGAPIRX9 } from './aegapi-rx9.js';
+import { Appliance, ApplianceInfoDTO } from './aegapi-types.js';
+import EventEmitter from 'events';
+import { PeriodicOp } from './periodic-op.js';
+import {
+    ActivityRX9,
+    AEGApplianceRX9CtrlActivity
+} from './aeg-appliance-rx9-ctrl-activity.js';
+import { logError } from './log-error.js';
+import { MapDataExtra } from './aeg-map.js';
+
+// Dynamic information about a robot
+export interface DynamicStateRX9 {
+    // Raw values provided by the Electrolux Group API
+    connected:          boolean;
+    enabled:            boolean;
+    batteryStatus:      RX9BatteryStatus;
+    dustbinStatus:      RX9Dustbin;
+    firmwareVersion:    string;
+    robotStatus:        RX9RobotStatus;
+    messages:           RX9Message[];
+    zoneStatus:         RX9CleaningSessionZoneStatus[];
+    ecoMode?:           boolean;
+    powerMode?:         RX92PowerMode;
+    // Status polling errors
+    apiError?:          unknown;
+    // Derived values
+    isDocked:           boolean;
+    isCharging:         boolean;
+    fauxStatus:         RX9RobotStatus;
+}
+export type StatusEventRX9 = keyof DynamicStateRX9;
+type StatusEventMap = {
+    [event in StatusEventRX9]-?: [DynamicStateRX9[event], Partial<DynamicStateRX9>[event]];
+}
+// Workaround TypeScript limitations preserving key-value relationships for tuples
+type StatusEmit<K extends StatusEventRX9> =
+    (event: K, newValue: DynamicStateRX9[K], oldValue: Partial<DynamicStateRX9>[K]) => boolean;
+
+// Other event types
+interface OtherEventMap {
+    error:          [unknown];                              // Error event (from EventEmitter)
+    preEmitPatch:   [DynamicStateRX9];                      // Opportunity to fake state
+    message:        [RX9Message];                           // New message received from API
+    map:            [RX9MapData, MapDataExtra];             // Map data when cleaning complete
+    changed:        [StatusEventRX9[], DynamicStateRX9];    // List of changed keys
+};
+
+// Timings for polling the status
+const POLL_INTERVAL_RAPID   = 1 * MS;
+const POLL_TIMEOUT_MULTIPLE = 2;
+const POLL_TIMEOUT_OFFSET   = 10 * MS;
+const POLL_INTERVAL_FAST_DIVISOR = 2;
+const POLL_INTERVAL_FAST_MIN = 10 * MS;
+const POLL_INTERVAL_SLOW_MULTIPLE = 2;
+const POLL_INTERVAL_SLOW_MAX = 180 * MS;
+const STATUS_EVENT_KEYS: StatusEventRX9[] = [
+    'connected',
+    'enabled',
+    'batteryStatus',
+    'dustbinStatus',
+    'firmwareVersion',
+    'robotStatus',
+    'messages',
+    'zoneStatus',
+    'ecoMode',
+    'powerMode',
+    'apiError',
+    'isDocked',
+    'isCharging',
+    'fauxStatus'
+];
+const ACTIVE_POLL_STATUSES = new Set<RX9RobotStatus>([
+    RX9RobotStatus.Cleaning,
+    RX9RobotStatus.PausedCleaning,
+    RX9RobotStatus.SpotCleaning,
+    RX9RobotStatus.PausedSpotCleaning,
+    RX9RobotStatus.Return,
+    RX9RobotStatus.PausedReturn,
+    RX9RobotStatus.ReturnForPitstop,
+    RX9RobotStatus.PausedReturnForPitstop,
+    RX9RobotStatus.ManualSteering
+]);
+
+// An AEG RX 9 / Electrolux Pure i9 robot manager
+export class AEGApplianceRX9
+    extends EventEmitter<StatusEventMap & OtherEventMap>
+    implements Appliance, ApplianceInfoDTO {
+
+    // Control the robot
+    readonly setActivity:   (command: ActivityRX9) => Promise<boolean>;
+    customPlay?:            RX9CustomPlayMapZones;
+
+    // Static information
+    //   ... from getAppliances
+    readonly applianceId:   string;
+    readonly applianceName: string;
+    readonly applianceType: string;
+    readonly created:       string;
+    //   ... from getApplianceInfo
+    readonly brand:         string;
+    readonly colour:        string;
+    readonly deviceType:    string;
+    readonly model:         string;
+    readonly pnc:           string;
+    readonly serialNumber:  string;
+    readonly variant:       string;
+    //   ... from getApplianceState
+    readonly capabilities:  RX9Capabilities[];
+    readonly platform:      string;
+
+    // Dynamic information about the robot
+    readonly state: DynamicStateRX9 = {
+        connected:          false,
+        enabled:            false,
+        batteryStatus:      RX9BatteryStatus.Dead,
+        dustbinStatus:      RX9Dustbin.Unknown,
+        firmwareVersion:    '',
+        robotStatus:        RX9RobotStatus.Error,
+        fauxStatus:         RX9RobotStatus.Error,
+        messages:           [],
+        zoneStatus:         [],
+        isDocked:           false,
+        isCharging:         false
+    };
+
+    // State that has been emitted as events
+    private emittedState: Partial<DynamicStateRX9> = {};
+    private readonly emittedMessages    = new Set<number>();
+    private readonly emittedMaps        = new Set<number>();
+    private emittedMessagesSignature = '';
+    private emittedZoneStatusSignature = '';
+    private currentMessagesSignature = '';
+    private currentZoneStatusSignature = '';
+
+    // Periodic API polling
+    poll?: PeriodicOp;
+
+    // Create a new robot manager
+    constructor(
+        readonly log:       AnsiLogger,
+        readonly config:    Config,
+        readonly api:       AEGAPIRX9,
+        appliance:          Appliance,
+        info:               RX9ApplianceInfo,
+        state:              RX9ApplianceState,
+        readonly maps:      RX9InteractiveMaps
+    ) {
+        super({ captureRejections: true });
+        super.on('error', err => { logError(this.log, 'Event', err); });
+
+        // Initialise static information about the robot
+        //   ... from getAppliances
+        this.applianceId    = appliance.applianceId;
+        this.applianceName  = appliance.applianceName;
+        this.applianceType  = appliance.applianceType;
+        this.created        = appliance.created;
+        //   ... from getApplianceInfo
+        const { applianceInfo } = info;
+        this.brand          = applianceInfo.brand;
+        this.colour         = applianceInfo.colour;
+        this.deviceType     = applianceInfo.deviceType;
+        this.model          = applianceInfo.model;
+        this.pnc            = applianceInfo.pnc;
+        this.serialNumber   = applianceInfo.serialNumber;
+        this.variant        = applianceInfo.variant;
+        //   ... from getApplianceState
+        const { reported } = state.properties;
+        this.platform       = reported.platform;
+        this.capabilities   = Object.keys(reported.capabilities) as RX9Capabilities[];
+
+        // Initialise dynamic information
+        this.updateFromApplianceState(state);
+
+        // Allow the robot to be controlled
+        this.setActivity    = new AEGApplianceRX9CtrlActivity(this).makeSetter();
+
+        // Start logging information about this robot
+        new AEGApplianceRX9Log(this);
+    }
+
+    // Start polling the appliance
+    async start(): Promise<void> {
+        if (this.poll) return;
+
+        // Ensure that events are generated for the initial state
+        this.emittedState = {};
+        this.emittedMessages.clear();
+
+        // Start polling the status
+        this.poll = new PeriodicOp(this.log, {
+            name:           'Appliance state',
+            interval:       this.getAdaptivePollInterval.bind(this),
+            intervalRapid:  POLL_INTERVAL_RAPID,
+            timeout:        this.config.pollIntervalSeconds * MS * POLL_TIMEOUT_MULTIPLE + POLL_TIMEOUT_OFFSET,
+            onOp:           this.pollApplianceState.bind(this),
+            onError:        this.pollError.bind(this)
+        });
+        return Promise.resolve();
+    }
+
+    // Stop polling the appliance
+    async stop(): Promise<void> {
+        await this.poll?.stop();
+        this.poll = undefined;
+    }
+
+    // Periodically poll the appliance state
+    async pollApplianceState(): Promise<void> {
+        const state = await this.api.getApplianceState();
+        this.updateFromApplianceState(state);
+        this.updateDerivedAndEmit();
+        this.emitMapEvent(state);
+    }
+
+    // Handle a status update for a periodic action
+    pollError(err?: unknown): void {
+        this.state.apiError = err;
+        this.updateDerivedAndEmit();
+    }
+
+    // Describe this robot
+    toString(): string {
+        const { brand, model, applianceName, applianceId } = this;
+        return `${brand} ${model} '${applianceName}' (Product ID ${applianceId})`;
+    }
+
+    // Update dynamic robot state
+    updateFromApplianceState(state: RX9ApplianceState): void {
+        // Extract the relevant information
+        const { reported } = state.properties;
+        const { messageList } = reported;
+        this.updateStatus({
+            connected:          state.connectionState === 'Connected',
+            enabled:            state.status          === 'enabled',
+            batteryStatus:      reported.batteryStatus,
+            dustbinStatus:      reported.dustbinStatus,
+            firmwareVersion:    reported.firmwareVersion,
+            robotStatus:        reported.robotStatus,
+            messages:           messageList.messages,
+            zoneStatus:         reported.cleaningSession?.zoneStatus ?? [],
+            ecoMode:            'ecoMode'   in reported ? reported.ecoMode   : undefined,
+            powerMode:          'powerMode' in reported ? reported.powerMode : undefined
+        });
+    }
+
+    // Updated derived values and emit changes
+    updateDerivedAndEmit(): void {
+        this.updateDerived();
+        this.emit('preEmitPatch', this.state);
+        this.emitMessages();
+        this.emitChangeEvents();
+    }
+
+    // Update derived values
+    updateDerived(): void {
+        const { robotStatus, batteryStatus, isDocked: wasDocked } = this.state;
+
+        // Mapping of robot activities
+        type ActivityMap = [boolean | null, boolean];
+        const activityMap: Record<RX9RobotStatus, ActivityMap> = {
+            //                                          Docked  Charging
+            [RX9RobotStatus.Cleaning]:                 [false,  false],
+            [RX9RobotStatus.PausedCleaning]:           [false,  false],
+            [RX9RobotStatus.SpotCleaning]:             [false,  false],
+            [RX9RobotStatus.PausedSpotCleaning]:       [false,  false],
+            [RX9RobotStatus.Return]:                   [false,  false],
+            [RX9RobotStatus.PausedReturn]:             [false,  false],
+            [RX9RobotStatus.ReturnForPitstop]:         [false,  false],
+            [RX9RobotStatus.PausedReturnForPitstop]:   [false,  false],
+            [RX9RobotStatus.Charging]:                 [true,   true],
+            [RX9RobotStatus.Sleeping]:                 [null,   false],
+            [RX9RobotStatus.Error]:                    [null,   false],
+            [RX9RobotStatus.Pitstop]:                  [true,   true],
+            [RX9RobotStatus.ManualSteering]:           [false,  false],
+            [RX9RobotStatus.FirmwareUpgrade]:          [null,   false]
+        };
+        const [isDockedStatus, isCharging] = activityMap[robotStatus];
+
+        // Use heuristics to determine whether docked state when unspecified
+        const isDockedInferred = batteryStatus === RX9BatteryStatus.FullyCharged ? true
+                               : batteryStatus === RX9BatteryStatus.High         ? wasDocked
+                               : false;
+        const isDocked = isDockedStatus ?? isDockedInferred;
+
+        // Update the status
+        this.updateStatus({ isDocked, isCharging, fauxStatus: robotStatus });
+    }
+
+    // Apply a partial update to the robot status
+    updateStatus(update: Partial<DynamicStateRX9>): void {
+        Object.assign(this.state, update);
+        if (update.messages !== undefined) {
+            this.currentMessagesSignature = this.messagesSignature(update.messages);
+        }
+        if (update.zoneStatus !== undefined) {
+            this.currentZoneStatusSignature = this.zoneStatusSignature(update.zoneStatus);
+        }
+    }
+
+    // Apply updates to the robot status and emit events for changes
+    emitChangeEvents(): void {
+        // Identify the values that have changed
+        const changed = STATUS_EVENT_KEYS.filter(key => this.hasStateChanged(key));
+        if (!changed.length) return;
+
+        // Log a summary of the changes
+        const toText = (value: unknown): string => {
+            switch (typeof(value)) {
+            case 'undefined':   return '?';
+            case 'string':      return /[- <>:,]/.test(value) ? `"${value}"` : value;
+            case 'number':      return value.toString();
+            case 'boolean':     return value.toString();
+            default:            return JSON.stringify(value);
+            }
+        };
+        const summary = changed.map(key =>
+            `${key}: ${toText(this.emittedState[key])}->${toText(this.state[key])}`);
+        this.log.debug(formatList(summary));
+
+        // Emit an event listing all of the keys that have changed
+        this.emit('changed', changed, this.state);
+
+        // Emit events for each change
+        changed.forEach(key => (this.emit as StatusEmit<typeof key>)(key, this.state[key], this.emittedState[key]));
+
+        // Store the updated values only for changed keys
+        for (const key of changed) {
+            this.setEmittedValue(key, this.state[key]);
+        }
+    }
+
+    // Detect whether a specific status field has changed
+    private hasStateChanged(key: StatusEventRX9): boolean {
+        const current = this.state[key];
+        const previous = this.emittedState[key];
+        switch (key) {
+        case 'messages':
+            return this.currentMessagesSignature !== this.emittedMessagesSignature;
+        case 'zoneStatus':
+            return this.currentZoneStatusSignature !== this.emittedZoneStatusSignature;
+        default:
+            return current !== previous;
+        }
+    }
+
+    // Preserve key-value typing for Partial<DynamicStateRX9> updates
+    private setEmittedValue<K extends StatusEventRX9>(key: K, value: DynamicStateRX9[K]): void {
+        this.emittedState[key] = value;
+        if (key === 'messages') {
+            this.emittedMessagesSignature = this.currentMessagesSignature;
+        } else if (key === 'zoneStatus') {
+            this.emittedZoneStatusSignature = this.currentZoneStatusSignature;
+        }
+    }
+
+    // Adaptive polling: poll faster while cleaning/moving and slower while docked/idle.
+    private getAdaptivePollInterval(): number {
+        const base = this.config.pollIntervalSeconds * MS;
+        const { fauxStatus, isDocked } = this.state;
+        if (ACTIVE_POLL_STATUSES.has(fauxStatus)) {
+            return Math.max(POLL_INTERVAL_FAST_MIN, Math.floor(base / POLL_INTERVAL_FAST_DIVISOR));
+        }
+        if (isDocked && (
+            fauxStatus === RX9RobotStatus.Sleeping ||
+            fauxStatus === RX9RobotStatus.Charging ||
+            fauxStatus === RX9RobotStatus.Pitstop
+        )) {
+            return Math.min(POLL_INTERVAL_SLOW_MAX, base * POLL_INTERVAL_SLOW_MULTIPLE);
+        }
+        return base;
+    }
+
+    // Compact signatures avoid deep-equality checks in the hot polling path.
+    private messagesSignature(messages: RX9Message[]): string {
+        if (!messages.length) return '';
+        return messages.map(({ id, timestamp, type, userErrorId, internalErrorId }) =>
+            `${id}:${timestamp}:${type}:${userErrorId ?? ''}:${internalErrorId ?? ''}`
+        ).join('|');
+    }
+
+    private zoneStatusSignature(zoneStatus: RX9CleaningSessionZoneStatus[]): string {
+        if (!zoneStatus.length) return '';
+        return zoneStatus.map(({ id, status, powerMode }) =>
+            `${id}:${status}:${powerMode}`
+        ).join('|');
+    }
+
+    // Emit events for any new messages
+    emitMessages(): void {
+        const { messages } = this.state;
+
+        // If there are no current messages then just flush the cache
+        if (!messages.length) {
+            this.emittedMessages.clear();
+            return;
+        }
+
+        // Emit events for any new messages
+        messages.forEach(message => {
+            const { id } = message;
+            if (!(this.emittedMessages.has(id))) {
+                this.emittedMessages.add(id);
+                this.emit('message', message);
+            }
+        });
+    }
+
+    // Emit map data at the end of a cleaning session
+    emitMapEvent(state: RX9ApplianceState): void {
+        const { mapData } = state.properties.reported;
+        if (!mapData) return;
+        const { sessionId } = mapData;
+
+        // Only emit the map data once when cleaning completes
+        if (mapData.cleaningComplete === RX9CleaningComplete.incomplete) return;
+        if (this.emittedMaps.has(sessionId)) return;
+        this.emittedMaps.add(sessionId);
+
+        // Find any matching cleaning session and/or interactive map
+        let { cleaningSession, cleaningSessionClosed } = state.properties.reported;
+        if (cleaningSession      ?.sessionId !== sessionId) cleaningSession       = undefined;
+        if (cleaningSessionClosed?.sessionId !== sessionId) cleaningSessionClosed = undefined;
+        const mapId = mapData.mapMatch?.uuid ?? cleaningSession?.persistentMapId ?? cleaningSessionClosed?.persistentMapId;
+        const mapDataExtra: MapDataExtra = {
+            session:        cleaningSession,
+            sessionClosed:  cleaningSessionClosed,
+            interactive:    this.maps.find(m => m.id === mapId)
+        };
+
+        // Emit the event
+        this.emit('map', mapData, mapDataExtra);
+    }
+
+    // Create a new AEG RX 9 / Electrolux Pure i9 robot manager
+    static async create(log: AnsiLogger, config: Config, api: AEGAPIRX9, appliance: Appliance): Promise<AEGApplianceRX9> {
+        // Read the full appliance details
+        const info  = await api.getApplianceInfo();
+        const state = await api.getApplianceState();
+
+        // Only read interactive maps if CustomPlay capability advertised
+        let maps: RX9InteractiveMaps = [];
+        if (state.properties.reported.capabilities.customPlay) {
+            maps  = await api.getInteractiveMaps();
+        }
+
+        // Create the robot manager
+        return new AEGApplianceRX9(log, config, api, appliance, info, state, maps);
+    }
+}

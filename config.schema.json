@@ -1,0 +1,88 @@
+{
+  "pluginAlias": "AEGRobotMatter",
+  "pluginType": "platform",
+  "singular": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "AEG Robot"
+      },
+      "apiKey": {
+        "title": "Electrolux API Key",
+        "type": "string",
+        "required": true
+      },
+      "accessToken": {
+        "title": "Access Token",
+        "type": "string",
+        "default": ""
+      },
+      "refreshToken": {
+        "title": "Refresh Token",
+        "type": "string",
+        "default": ""
+      },
+      "accessTokenURL": {
+        "title": "Access Token URL",
+        "type": "string"
+      },
+      "exposeMode": {
+        "title": "Expose Mode",
+        "type": "string",
+        "default": "auto",
+        "oneOf": [
+          { "title": "Auto", "enum": ["auto"] },
+          { "title": "HomeKit Switch", "enum": ["switch"] },
+          { "title": "Matter RVC", "enum": ["matter-rvc"] },
+          { "title": "Both", "enum": ["both"] }
+        ]
+      },
+      "switchOffAction": {
+        "title": "Switch Off Action",
+        "type": "string",
+        "default": "dock",
+        "oneOf": [
+          { "title": "Pause", "enum": ["pause"] },
+          { "title": "Stop", "enum": ["stop"] },
+          { "title": "Dock", "enum": ["dock"] }
+        ]
+      },
+      "pollIntervalSeconds": {
+        "title": "Polling Interval",
+        "type": "integer",
+        "default": 30,
+        "minimum": 10
+      },
+      "whiteList": {
+        "title": "Serial Number Allow List",
+        "type": "array",
+        "items": { "type": "string" },
+        "default": []
+      },
+      "blackList": {
+        "title": "Serial Number Block List",
+        "type": "array",
+        "items": { "type": "string" },
+        "default": []
+      },
+      "logMapStyle": {
+        "title": "Map Logging",
+        "type": "string",
+        "default": "Off",
+        "oneOf": [
+          { "title": "Off", "enum": ["Off"] },
+          { "title": "Homebridge", "enum": ["Matterbridge"] },
+          { "title": "Monospaced", "enum": ["Monospaced"] }
+        ]
+      },
+      "debug": {
+        "title": "Debug Logging",
+        "type": "boolean",
+        "default": false
+      }
+    }
+  }
+}

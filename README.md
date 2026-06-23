@@ -1,14 +1,141 @@
 # homebridge-aeg-robot-matter
 
-Homebridge plugin for AEG RX9 / Electrolux Pure i9 robot vacuums.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/wiki/thoukydides/matterbridge-aeg-robot/matterbridge-aeg-robot.svg" style="height: 200px; max-width: 100%;">
+</p>
 
-This is an early Homebridge port of `matterbridge-aeg-robot-niklas`. The first working target is a HomeKit switch:
+<div align="center">
 
-- switch on: start cleaning
-- switch off: configurable `dock`, `pause`, or `stop`
-- state follows whether the robot is actively cleaning
+# homebridge-aeg-robot-matter
 
-Matter RVC support is planned. For now, `exposeMode: "auto"` exposes the HomeKit switch even when Matter is enabled, so the plugin remains usable while the Matter accessory implementation is added.
+[![npm](https://img.shields.io/npm/v/homebridge-aeg-robot-matter?label=Latest)](https://www.npmjs.com/package/homebridge-aeg-robot-matter)
+[![npm](https://img.shields.io/npm/dt/homebridge-aeg-robot-matter?logo=npm&label=Downloads)](https://www.npmjs.com/package/homebridge-aeg-robot-matter)
+
+Homebridge plugin for **AEG RX9** and **Electrolux Pure i9** robot vacuums.
+
+Supports both **HomeKit (HAP)** and **Matter Robotic Vacuum Cleaner (RVC)**.
+
+</div>
+
+> This project is an independent Homebridge adaptation inspired by the original `matterbridge-aeg-robot` project by Alexander Thoukydides, extending the original concepts to support both HomeKit and Matter within Homebridge.
+
+<p align="center">
+  <img src="docs/images/home-app-controls.png" width="320">
+</p>
+
+---
+
+## Highlights
+
+- Native HomeKit integration
+- Matter Robotic Vacuum Cleaner (RVC) support
+- Room selection support
+- Cleaning mode selection
+- Battery and charging status
+- HomeKit automations
+- Siri support
+- Multiple robot support
+
+---
+
+## Screenshots
+
+### Apple Home Integration
+
+<p align="center">
+  <img src="docs/images/home-app-main.png" width="250">
+  <img src="docs/images/home-app-controls.png" width="250">
+  <img src="docs/images/home-app-configuration.png" width="250">
+</p>
+
+### Matter Robotic Vacuum Cleaner
+
+<p align="center">
+  <img src="docs/images/matter-rvc-modes.png" width="250">
+  <img src="docs/images/matter-rvc-rooms.png" width="250">
+</p>
+
+### HomeKit Automations
+
+<p align="center">
+  <img src="docs/images/home-app-automation.png" width="250">
+</p>
+
+---
+
+## Features
+
+### HomeKit (HAP)
+
+- Start cleaning
+- Pause cleaning
+- Stop cleaning
+- Return to charging dock
+- Battery level reporting
+- Charging status
+- Error reporting
+- Siri and HomeKit automation support
+
+### Matter Robotic Vacuum Cleaner (RVC)
+
+- Start cleaning
+- Pause
+- Resume
+- Return to dock
+- Room selection
+- Cleaning mode selection
+- Operational state reporting
+- Battery reporting
+- Charging state reporting
+- Matter RVC cluster support
+
+---
+
+## Supported Models
+
+Tested with:
+
+- AEG RX9
+- AEG RX9.2
+- Electrolux Pure i9
+
+Other variants may work but have not been explicitly tested.
+
+---
+
+## Installation
+
+### Step 1 - Create an Electrolux Account
+
+1. Install the AEG or Electrolux mobile application.
+2. Create an account.
+3. Add and configure your robot vacuum.
+
+### Step 2 - Obtain API Credentials
+
+1. Log in to https://developer.electrolux.one
+2. Create an API Key.
+3. Generate:
+   - Access Token
+   - Refresh Token
+
+### Step 3 - Install the Plugin
+
+Using Homebridge UI:
+
+1. Open Homebridge Config UI X.
+2. Search for `homebridge-aeg-robot-matter`.
+3. Install the plugin.
+4. Configure your credentials.
+5. Restart Homebridge.
+
+Or manually:
+
+```bash
+npm install -g homebridge-aeg-robot-matter
+```
+
+---
 
 ## Configuration
 
@@ -25,19 +152,79 @@ Matter RVC support is planned. For now, `exposeMode: "auto"` exposes the HomeKit
 }
 ```
 
-## Options
+---
+
+## Configuration Options
 
 | Option | Default | Description |
-| --- | --- | --- |
-| `apiKey` | required | Electrolux Group API key. |
-| `accessToken` | `""` | Initial access token, if not using `accessTokenURL`. |
-| `refreshToken` | `""` | Initial refresh token, if not using `accessTokenURL`. |
-| `accessTokenURL` | unset | Optional URL returning token JSON for refresh/bootstrap. |
-| `exposeMode` | `"auto"` | `auto`, `switch`, `matter-rvc`, or `both`. Matter RVC is not implemented yet. |
-| `switchOffAction` | `"dock"` | Action when the HomeKit switch is turned off: `dock`, `pause`, or `stop`. |
-| `pollIntervalSeconds` | `30` | Poll interval for Electrolux state. |
-| `whiteList` | `[]` | Optional robot serial numbers to include. |
-| `blackList` | `[]` | Optional robot serial numbers to exclude. |
+|----------|----------|----------|
+| `apiKey` | Required | Electrolux API Key |
+| `accessToken` | `""` | Initial access token |
+| `refreshToken` | `""` | Initial refresh token |
+| `accessTokenURL` | Not set | Optional external token provider |
+| `exposeMode` | `auto` | `auto`, `switch`, `matter-rvc`, or `both` |
+| `switchOffAction` | `dock` | `dock`, `pause`, or `stop` |
+| `pollIntervalSeconds` | `30` | API polling interval |
+| `whiteList` | `[]` | Serial numbers to include |
+| `blackList` | `[]` | Serial numbers to exclude |
+
+---
+
+## Matter Support
+
+The plugin exposes Matter-compatible robotic vacuum functionality including:
+
+- RVC Run Mode
+- RVC Operational State
+- Power Source
+- RVC Clean Mode
+- Service Area / Room Selection
+
+Supported operations include:
+
+- Start cleaning
+- Pause
+- Resume
+- Return to dock
+- Room cleaning
+- Battery monitoring
+- Charging status
+- Error reporting
+
+---
+
+## Apple Home Notes
+
+Apple Home currently has some limitations regarding Matter robotic vacuum cleaners.
+
+Depending on the Home app version, cleaning modes may be displayed using generic Apple labels rather than the mode names reported by the robot.
+
+This is a Home app limitation and does not affect operation.
+
+---
+
+## Compatibility
+
+Tested with:
+
+- Homebridge 2.x
+- Apple Home
+- HomePod
+- Apple TV
+- iPhone
+- iPad
+
+Matter support requires a Matter-compatible Home Hub.
+
+---
+
+## API Rate Limits
+
+The Electrolux API enforces daily request limits.
+
+The default polling interval of 30 seconds is suitable for a single robot vacuum. If multiple robots share the same API key, consider increasing the polling interval.
+
+---
 
 ## Development
 
@@ -45,3 +232,46 @@ Matter RVC support is planned. For now, `exposeMode: "auto"` exposes the HomeKit
 npm install
 npm run build
 ```
+
+---
+
+## Reporting Issues
+
+Please open issues at:
+
+https://github.com/Niklas31/homebridge-aeg-robot-matter/issues
+
+---
+
+## Credits
+
+This project would not exist without the original work by **Alexander Thoukydides**, author of:
+
+https://github.com/thoukydides/matterbridge-aeg-robot
+
+The Homebridge implementation adapts and extends concepts, API integrations, and Matter robotic vacuum functionality from the original Matterbridge project.
+
+Additional development, Homebridge integration, Matter support, maintenance, testing, and documentation were performed by **Nicolas Lehmann**.
+
+AI-assisted development tools, including **OpenAI Codex** and **Google Gemini**, were used during development to assist with code generation, refactoring, debugging, documentation, and migration of functionality between platforms.
+
+Special thanks to:
+
+- Alexander Thoukydides
+- Matterbridge
+- Homebridge
+- Matter.js contributors
+
+---
+
+## Legal
+
+AEG, Electrolux, and Zanussi are trademarks of AB Electrolux.
+
+This project is not affiliated with, endorsed by, or sponsored by AB Electrolux.
+
+---
+
+## License
+
+ISC License

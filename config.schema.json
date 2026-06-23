@@ -12,8 +12,7 @@
       },
       "apiKey": {
         "title": "Electrolux API Key",
-        "type": "string",
-        "required": true
+        "type": "string"
       },
       "accessToken": {
         "title": "Access Token",
@@ -83,6 +82,9 @@
         "type": "boolean",
         "default": false
       }
-    }
+    },
+    "required": [
+      "apiKey"
+    ]
   }
 }

@@ -18,7 +18,7 @@ export const ENGINES        = PACKAGE.engines;
 export const PLUGIN_NAME    = PACKAGE.name;
 export const PLATFORM_NAME  = 'AEGRobotMatter';
 export const DISPLAY_NAME   = PACKAGE.displayName;
-export const PLUGIN_VERSION = PACKAGE.version;
+export const PLUGIN_VERSION: string = PACKAGE.version;
 export const PLUGIN_URL     = PACKAGE.homepage;
 
 export const API_DAILY_LIMIT = 5000;

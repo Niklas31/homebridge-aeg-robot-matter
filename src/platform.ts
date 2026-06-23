@@ -18,6 +18,8 @@ import { logError } from './log-error.js';
 import { DEFAULT_CONFIG, PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import { RX9RobotStatus } from './aegapi-rx9-types.js';
 
+import { AEGMatterRobot } from './aeg-appliance-matter-rx9.js';
+
 interface AccessoryContext {
     serialNumber: string;
     applianceName: string;
@@ -77,7 +79,7 @@ export class AEGRobotPlatform implements DynamicPlatformPlugin {
     private async discoverRobots(): Promise<void> {
         try {
             this.persist = NodePersist.create({
-                dir: Path.join(this.api.user.persistPath(), PLUGIN_NAME)
+                dir: Path.join(this.api.user.storagePath(), PLUGIN_NAME)
             });
             await this.persist.init();
 
@@ -94,11 +96,6 @@ export class AEGRobotPlatform implements DynamicPlatformPlugin {
             }
 
             this.unregisterMissingAccessories(registered);
-
-            const exposeMode = this.getEffectiveExposeMode();
-            if (exposeMode === 'matter-rvc') {
-                this.logger.warn('Matter RVC mode is planned but not implemented yet; use exposeMode "switch" or "auto" for now');
-            }
         } catch (err) {
             logError(this.logger, 'Discovering robots', err);
         }
@@ -111,6 +108,10 @@ export class AEGRobotPlatform implements DynamicPlatformPlugin {
 
         if (exposeMode === 'switch' || exposeMode === 'both') {
             this.registerSwitch(appliance);
+        }
+
+        if ((exposeMode === 'matter-rvc' || exposeMode === 'both') && this.api.isMatterEnabled?.()) {
+            new AEGMatterRobot(this, appliance);
         }
 
         await appliance.start();
@@ -131,7 +132,7 @@ export class AEGRobotPlatform implements DynamicPlatformPlugin {
 
         const info = accessory.getService(this.Service.AccessoryInformation)
             ?? accessory.addService(this.Service.AccessoryInformation);
-        info.setCharacteristic(this.Characteristic.Manufacturer, appliance.brand || 'Electrolux')
+        info.setCharacteristic(this.Characteristic.Manufacturer, appliance.brand || 'AEG')
             .setCharacteristic(this.Characteristic.Model, appliance.model || 'RX9')
             .setCharacteristic(this.Characteristic.SerialNumber, appliance.serialNumber)
             .setCharacteristic(this.Characteristic.FirmwareRevision, appliance.state.firmwareVersion || 'unknown');
@@ -168,7 +169,7 @@ export class AEGRobotPlatform implements DynamicPlatformPlugin {
     private getEffectiveExposeMode(): ExposeMode {
         if (this.config.exposeMode !== 'auto') return this.config.exposeMode;
         if (this.api.isMatterEnabled?.()) {
-            this.logger.info('Matter is enabled; using HomeKit switch until Matter RVC support is implemented');
+            return 'matter-rvc';
         }
         return 'switch';
     }

@@ -74,7 +74,7 @@
         "default": "Off",
         "oneOf": [
           { "title": "Off", "enum": ["Off"] },
-          { "title": "Homebridge", "enum": ["Matterbridge"] },
+          { "title": "Homebridge", "enum": ["Homebridge"] },
           { "title": "Monospaced", "enum": ["Monospaced"] }
         ]
       },

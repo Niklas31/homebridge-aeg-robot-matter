@@ -7,7 +7,7 @@ import { Client, Dispatcher } from 'undici';
 import { Checker, IErrorDetail } from 'ts-interface-checker';
 import { setTimeout } from 'node:timers/promises';
 import { IncomingHttpHeaders } from 'undici/types/header.js';
-import { PLUGIN_NAME, PLUGIN_VERSION } from './settings.js';
+import * as settings from './settings.js';
 import {
     AEGAPIError,
     AEGAPIStatusCodeError,
@@ -60,7 +60,7 @@ export interface RequestResponse {
 export const ELECTROLUX_GROUP_API_URL = 'https://api.developer.electrolux.one';
 
 // User agent string
-export const USER_AGENT = `${PLUGIN_NAME}/${PLUGIN_VERSION}`;
+export const USER_AGENT = `${settings.PLUGIN_NAME}/${settings.PLUGIN_VERSION}`;
 
 /* eslint-disable max-len */
 

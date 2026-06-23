@@ -138,8 +138,8 @@ export class AEGApplianceRX9
         batteryStatus:      RX9BatteryStatus.Dead,
         dustbinStatus:      RX9Dustbin.Unknown,
         firmwareVersion:    '',
-        robotStatus:        RX9RobotStatus.Error,
-        fauxStatus:         RX9RobotStatus.Error,
+        robotStatus:        RX9RobotStatus.Sleeping,
+        fauxStatus:         RX9RobotStatus.Sleeping,
         messages:           [],
         zoneStatus:         [],
         isDocked:           false,
@@ -460,9 +460,9 @@ export class AEGApplianceRX9
         const info  = await api.getApplianceInfo();
         const state = await api.getApplianceState();
 
-        // Only read interactive maps if CustomPlay capability advertised
+        // Only read interactive maps if CustomPlay or InteractiveMap capability advertised
         let maps: RX9InteractiveMaps = [];
-        if (state.properties.reported.capabilities.customPlay) {
+        if (state.properties.reported.capabilities.customPlay || state.properties.reported.capabilities.interactiveMap) {
             maps  = await api.getInteractiveMaps();
         }
 

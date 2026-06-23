@@ -68,6 +68,7 @@ export class AEGAuthoriseUserAgent extends AEGUserAgent {
 
         // Authorise the user agent
         this.authorised = this.makeAuthPromise();
+        this.authorised.catch(() => {}); // Prevent unhandled rejection
         void this.authoriseUserAgent();
     }
 
@@ -80,23 +81,28 @@ export class AEGAuthoriseUserAgent extends AEGUserAgent {
 
     // Attempt to authorise access to the API
     async authoriseUserAgent(): Promise<void> {
-        // Retrieve any saved tokens
-        if (await this.fetchAccessTokenFromURL()) {
-            this.log.info('Using access token from URL for testing');
-            this.authorisedFn.resolve();
-        } else if (!await this.loadTokens()) {
-            this.log.info('No saved access token; using credentials from configuration');
-            await this.saveTokens(this.config.accessToken, this.config.refreshToken, NEW_TOKEN_REFRESH_DELAY_MS);
-            this.authorisedFn.resolve();
-        } else if (Date.now() + REFRESH_WINDOW_MS < this.token.expiresAt) {
-            this.log.info('Using saved access token');
-            this.authorisedFn.resolve();
-        } else {
-            this.log.info('Saved access token has expired');
-        }
+        try {
+            // Retrieve any saved tokens
+            if (await this.fetchAccessTokenFromURL()) {
+                this.log.info('Using access token from URL for testing');
+                this.authorisedFn.resolve();
+            } else if (!await this.loadTokens()) {
+                this.log.info('No saved access token; using credentials from configuration');
+                await this.saveTokens(this.config.accessToken, this.config.refreshToken, NEW_TOKEN_REFRESH_DELAY_MS);
+                this.authorisedFn.resolve();
+            } else if (Date.now() + REFRESH_WINDOW_MS < this.token.expiresAt) {
+                this.log.info('Using saved access token');
+                this.authorisedFn.resolve();
+            } else {
+                this.log.info('Saved access token has expired');
+            }
 
-        // Repeat authorisation whenever necessary
-        await this.periodicallyRefreshTokens();
+            // Repeat authorisation whenever necessary
+            await this.periodicallyRefreshTokens();
+        } catch (err) {
+            logError(this.log, 'Initial API authorisation', err);
+            this.authorisedFn.reject(err);
+        }
     }
 
     // Periodically refresh the tokens
@@ -162,6 +168,7 @@ export class AEGAuthoriseUserAgent extends AEGUserAgent {
 
     // Attempt to fetch an access token from a configured URL for testing
     async fetchAccessTokenFromURL(): Promise<boolean> {
+        try {
         const { accessTokenURL, accessToken, refreshToken } = this.config;
         if (!accessTokenURL || accessToken || refreshToken) return false;
         const headers = { 'User-Agent': USER_AGENT };
@@ -170,12 +177,16 @@ export class AEGAuthoriseUserAgent extends AEGUserAgent {
         const fetchedToken = await response.text();
         const expiresAt = Date.now() + FETCH_TOKEN_REFRESH_DELAY_MS;
         this.token = { accessToken: fetchedToken, refreshToken: '', expiresAt };
-        return true;
+            return true;
+        } catch (err) {
+            logError(this.log, 'Fetching access token from URL', err);
+            return false;
+        }
     }
 
     // Authorization header value for the current access token
-    get authorizationHeader(): string {
-        return `Bearer ${this.token.accessToken}`;
+    get authorizationHeader(): string | undefined {
+        return this.token?.accessToken ? `Bearer ${this.token.accessToken}` : undefined;
     }
 
     // Trigger an immediate token refresh
@@ -186,6 +197,7 @@ export class AEGAuthoriseUserAgent extends AEGUserAgent {
             this.refreshAbortController.abort();
             this.refreshAbortController = undefined;
             this.authorised = this.makeAuthPromise();
+        this.authorised.catch(() => {}); // Prevent unhandled rejection
         }
     }
 
@@ -213,7 +225,10 @@ export class AEGAuthoriseUserAgent extends AEGUserAgent {
         }
 
         // Set the Authorization header
-        request.headers.authorization = this.authorizationHeader;
+        if (!options?.isAuthRequest) {
+            const auth = this.authorizationHeader;
+            if (auth) request.headers.authorization = auth;
+        }
 
         // Return the modified request options
         return request;

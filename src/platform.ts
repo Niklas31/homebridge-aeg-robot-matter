@@ -61,6 +61,11 @@ export class AEGRobotPlatform implements DynamicPlatformPlugin {
         this.logger = new PrefixLogger(log);
         if (this.config.debugFeatures.includes('Log Debug as Info')) this.logger.logDebugAsInfo();
 
+        if (!this.config.apiKey) {
+            this.logger.error('Missing required Electrolux apiKey in configuration. Plugin will not start.');
+            return;
+        }
+
         this.api.on('didFinishLaunching', () => {
             void this.discoverRobots();
         });
@@ -88,11 +93,18 @@ export class AEGRobotPlatform implements DynamicPlatformPlugin {
             this.logger.info(`Found ${pending.length} robot vacuum cleaner candidate(s)`);
 
             const registered: AEGApplianceRX9[] = [];
-            for (const robot of pending) {
-                const appliance = await robot.appliancePromise;
-                if (!this.isSelected(appliance)) continue;
-                registered.push(appliance);
-                await this.registerRobot(robot);
+            const results = await Promise.allSettled(pending.map(robot => robot.appliancePromise));
+            for (let i = 0; i < results.length; i++) {
+                const result = results[i];
+                const robot = pending[i];
+                if (result.status === 'fulfilled') {
+                    const appliance = result.value;
+                    if (!this.isSelected(appliance)) continue;
+                    registered.push(appliance);
+                    await this.registerRobot(robot);
+                } else {
+                    logError(this.logger, `Discovering robot ${robot.applianceName}`, result.reason);
+                }
             }
 
             this.unregisterMissingAccessories(registered);
@@ -208,8 +220,8 @@ function normalizeConfig(raw: PlatformConfig): Config {
     config.debug ??= false;
     config.debugFeatures ??= [];
 
-    if (!config.apiKey) {
-        throw new Error('Missing required Electrolux apiKey');
+    if (config.debugFeatures.includes('Log Debug as Info')) {
+        // This is handled in the constructor now
     }
     return config;
 }

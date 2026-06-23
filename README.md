@@ -27,7 +27,7 @@ Supports both **HomeKit (HAP)** and **Matter Robotic Vacuum Cleaner (RVC)**.
 
 ## Highlights
 
-- Native HomeKit integration
+- HomeKit Switch accessory support
 - Matter Robotic Vacuum Cleaner (RVC) support
 - Room selection support
 - Cleaning mode selection
@@ -88,7 +88,68 @@ Supports both **HomeKit (HAP)** and **Matter Robotic Vacuum Cleaner (RVC)**.
 - Battery reporting
 - Charging state reporting
 - Matter RVC cluster support
+## Accessory Modes
 
+The plugin can expose robot vacuums in different ways depending on your HomeKit and Matter setup.
+
+### HomeKit Switch
+
+A simple and highly compatible HomeKit accessory.
+
+Features:
+
+- Start cleaning
+- Stop, pause, or dock when switched off
+- Compatible with older HomeKit setups
+- Ideal for automations that only need basic cleaning control
+
+```json
+{
+  "exposeMode": "switch"
+}
+```
+
+### Matter Robotic Vacuum Cleaner (RVC)
+
+Exposes the vacuum using the Matter Robotic Vacuum Cleaner device type.
+
+Features:
+
+- Native vacuum controls
+- Cleaning modes
+- Room selection
+- Operational state reporting
+- Battery status
+- Docking controls
+- Better integration with recent Apple Home versions
+
+```json
+{
+  "exposeMode": "matter-rvc"
+}
+```
+
+### Both
+
+Expose both accessories simultaneously.
+
+This is useful when migrating from HomeKit Switch mode to Matter RVC or when compatibility with existing automations is required.
+
+```json
+{
+  "exposeMode": "both"
+}
+```
+
+### Auto
+
+Automatically selects the recommended mode for your Homebridge environment.
+
+```json
+{
+  "exposeMode": "auto"
+}
+```
 ---
 
 ## Supported Models
@@ -200,6 +261,25 @@ Apple Home currently has some limitations regarding Matter robotic vacuum cleane
 Depending on the Home app version, cleaning modes may be displayed using generic Apple labels rather than the mode names reported by the robot.
 
 This is a Home app limitation and does not affect operation.
+## Apple Home Experience
+
+The Matter Robotic Vacuum Cleaner implementation has been tested with:
+
+- iOS 27 Developer Beta
+- tvOS 27 Developer Beta
+
+In testing, Apple Home support for Matter robotic vacuum cleaners is noticeably improved on iOS 27 and tvOS 27 compared to iOS 26.5.
+
+Observed improvements include:
+
+- More reliable device connectivity
+- Faster state updates
+- Better responsiveness when issuing commands
+- Fewer instances of accessories becoming temporarily unavailable
+
+While the plugin works on iOS 26.5, occasional connection and responsiveness issues were observed in Apple Home. These issues appear to be significantly reduced when using iOS 27 and tvOS 27.
+
+As Matter support for robotic vacuum cleaners continues to evolve, the best user experience is currently achieved using the latest Apple platform releases.
 
 ---
 

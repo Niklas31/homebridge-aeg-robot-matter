@@ -10,6 +10,7 @@
 
 [![npm](https://img.shields.io/npm/v/homebridge-aeg-robot-matter?label=Latest)](https://www.npmjs.com/package/homebridge-aeg-robot-matter)
 [![npm](https://img.shields.io/npm/dt/homebridge-aeg-robot-matter?logo=npm&label=Downloads)](https://www.npmjs.com/package/homebridge-aeg-robot-matter)
+[![verified-by-homebridge](https://img.shields.io/badge/homebridge-verified-blueviolet?color=%23491F59&style=flat)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 
 Homebridge plugin for **AEG RX9** and **Electrolux Pure i9** robot vacuums.
 

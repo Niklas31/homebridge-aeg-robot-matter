@@ -87,6 +87,16 @@ export abstract class AEGApplianceRX9Ctrl<Type extends number | string> {
             try { await this.setInProgress.promise; } catch { /* empty */ }
         }
 
+        // A matching command may already be in flight: sent and accepted, but
+        // awaiting status confirmation from the cloud. The robot's reported
+        // status still lags behind, so re-issuing the command now would send a
+        // duplicate (e.g. a second 'play'), which some models treat as a
+        // pause/toggle. Treat it as redundant while the prediction is pending.
+        if (this.pending?.target === target) {
+            this.log.info(`Ignoring duplicate request to ${description} (command already in flight)`);
+            return true;
+        }
+
         // No action required if in, or cannot transition to, the required state
         const isTargetSet = this.isTargetSet(target);
         if (isTargetSet === true) {

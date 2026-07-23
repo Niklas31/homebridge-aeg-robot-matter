@@ -22,4 +22,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npm publish
+      # Pre-releases on GitHub publish under the "beta" npm tag so they do not
+      # replace the "latest" version that regular users install. A normal
+      # (non-prerelease) GitHub release publishes as "latest" as usual.
+      - run: npm publish ${{ github.event.release.prerelease && '--tag beta' || '' }}

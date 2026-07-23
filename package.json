@@ -1,7 +1,7 @@
 {
   "name": "homebridge-aeg-robot-matter",
   "displayName": "AEG Robot Matter",
-  "version": "1.0.2",
+  "version": "1.0.3-beta.0",
   "description": "Homebridge plugin for AEG RX9 / Electrolux Pure i9 robot vacuums with HomeKit switch and Matter RVC support.",
   "license": "MIT",
   "author": {
